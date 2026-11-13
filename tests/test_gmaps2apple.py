@@ -62,8 +62,20 @@ def test_short_link_no_network():
 
 def test_apple_url_order_and_encoding():
     url = g.apple_url(["Athens, Greece", "Corinth", "Patras"], "walking")
-    assert url == ("https://maps.apple.com/?saddr=Athens%2C+Greece&daddr=Corinth"
-                   "&daddr=Patras&dirflg=w")
+    assert url == ("https://maps.apple.com/directions?source=Athens%2C%20Greece"
+                   "&waypoint=Corinth&destination=Patras&mode=walking")
+
+
+def test_apple_url_multiple_waypoints_and_coords():
+    url = g.apple_url(["37.98,23.72", "A B", "C", "38.1,21.7"])
+    assert url == ("https://maps.apple.com/directions?source=37.98,23.72"
+                   "&waypoint=A%20B&waypoint=C&destination=38.1,21.7&mode=driving")
+    assert "daddr" not in url
+
+
+def test_apple_url_two_stops_no_waypoint():
+    url = g.apple_url(["A", "B"], "bicycling")
+    assert url == "https://maps.apple.com/directions?source=A&destination=B&mode=cycling"
 
 
 def test_apple_legs():
@@ -83,6 +95,7 @@ def test_cli_json(capsys):
     assert rc == 0
     assert out["stops"] == ["A", "B", "C"]
     assert len(out["legs"]) == 2
+    assert out["apple_url"].startswith("https://maps.apple.com/directions?source=A&waypoint=B")
 
 
 def test_cli_error(capsys):

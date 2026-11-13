@@ -2,19 +2,21 @@
 
 Input: a Google Maps URL (or plain text, one stop per line / "A -> B -> C").
 Output: an ordered list of stops plus Apple Maps URLs:
-  * one URL with repeated ``daddr`` (community-reported, NOT officially documented)
-  * one URL per leg (``saddr`` + ``daddr``), the conservative fallback.
+  * one ``directions?source=&waypoint=&destination=`` URL (iOS 18.4+, official unified map URL)
+  * one URL per leg (``saddr`` + ``daddr``), the fallback for iOS older than 18.4.
 """
 import argparse
 import json
 import re
 import sys
 import urllib.request
-from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
+from urllib.parse import parse_qs, quote, quote_plus, unquote_plus, urlparse
 
 SHORT_HOSTS = {"maps.app.goo.gl", "goo.gl"}
 COORD_RE = re.compile(r"^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$")
 MODES = {"driving": "d", "walking": "w", "transit": "r", "bicycling": None}
+UNIFIED_MODES = {"driving": "driving", "walking": "walking", "transit": "transit",
+                 "bicycling": "cycling"}
 
 
 def is_short_link(url):
@@ -104,20 +106,24 @@ def _apple_param(stop):
     return quote_plus(stop)
 
 
+def _unified_param(stop):
+    """Percent-encode a stop; lat,lon coordinates keep their comma."""
+    return quote(stop, safe=",") if COORD_RE.match(stop) else quote(stop, safe="")
+
+
 def apple_url(stops, mode=None):
-    """Single URL with repeated daddr (unofficial multi-stop form)."""
+    """Single unified Apple Maps URL (iOS 18.4+): source, waypoint(s), destination."""
     if len(stops) < 2:
         raise ValueError("Need at least origin and destination.")
-    parts = ["saddr=" + _apple_param(stops[0])]
-    parts += ["daddr=" + _apple_param(s) for s in stops[1:]]
-    flag = MODES.get(mode or "driving")
-    if flag:
-        parts.append("dirflg=" + flag)
-    return "https://maps.apple.com/?" + "&".join(parts)
+    parts = ["source=" + _unified_param(stops[0])]
+    parts += ["waypoint=" + _unified_param(s) for s in stops[1:-1]]
+    parts.append("destination=" + _unified_param(stops[-1]))
+    parts.append("mode=" + UNIFIED_MODES.get(mode or "driving", "driving"))
+    return "https://maps.apple.com/directions?" + "&".join(parts)
 
 
 def apple_legs(stops, mode=None):
-    """One URL per leg: the fallback chain, each uses only documented params."""
+    """One URL per leg: fallback chain for iOS older than 18.4."""
     if len(stops) < 2:
         raise ValueError("Need at least origin and destination.")
     flag = MODES.get(mode or "driving")
@@ -160,9 +166,9 @@ def main(argv=None):
     print("Stops:")
     for i, s in enumerate(result["stops"], 1):
         print("  %d. %s" % (i, s))
-    print("\nSingle link (repeated daddr, unverified on iOS):")
+    print("\nSingle link (iOS 18.4+):")
     print("  " + result["apple_url"])
-    print("\nLeg-by-leg links (fallback):")
+    print("\nLeg-by-leg links (fallback for iOS < 18.4):")
     for i, u in enumerate(result["legs"], 1):
         print("  %d. %s" % (i, u))
     return 0

@@ -43,27 +43,21 @@ consent redirect για short link, το resolve θα αποτύχει.
 
 ### Apple Maps και πολλαπλές στάσεις
 
-- Η επίσημη τεκμηρίωση Map Links (developer.apple.com) περιγράφει `saddr`, `daddr`, `dirflg`.
-  **Δεν αναφέρει ενδιάμεσες στάσεις ούτε επαναλαμβανόμενο `daddr`.** Δεν βρήκα επίσημο `to:`.
-- Το Open Radar 36500783 (2018) ζητά ενδιάμεσα waypoints στο URL handler· εμφανίζεται ανοιχτό.
-  Μπορεί να είναι παλιό.
-- Αναφορές χρηστών (ABRP bug report, Reddit r/shortcuts 2022) δείχνουν
-  `maps://?saddr=..&daddr=A&daddr=B&dirflg=d` να φορτώνει πολλές στάσεις. Δεν είναι
-  τεκμηριωμένο και ένα τουλάχιστον report τιτλοφορείται "shows directions to first stop",
-  άρα **ανεπιβεβαίωτο** και πιθανώς μόνο η πρώτη στάση.
-- Η εφαρμογή Apple Maps από iOS 16 επιτρέπει χειροκίνητα πολλαπλές στάσεις (αναφέρεται
-  όριο 15, μόνο οδήγηση), όχι όμως μέσω επίσημου URL. Δεν είναι διαθέσιμο σε όλες τις χώρες.
-- Shortcuts: δεν βρήκα επιβεβαιωμένη δυνατότητα να φτιαχτεί πλήρης διαδρομή. Η κοινότητα
-  χρησιμοποιεί αλυσίδα Open URL (πρώτος προορισμός, μετά αναζήτηση για "Add Stop"). Guides: δεν
-  διαβάζονται αξιόπιστα από Shortcuts. MapKit απαιτεί εφαρμογή iOS, εκτός πεδίου.
+Αποτέλεσμα δοκιμής στο iPhone (Manolis):
 
-**Συμπέρασμα:** Το Apple Maps δεν τεκμηριώνει σύνδεσμο με πολλές στάσεις. Το εργαλείο δίνει:
-1. έναν σύνδεσμο με επαναλαμβανόμενο `daddr` (δοκιμάστε πρώτα· ανεπιβεβαίωτο),
-2. εναλλακτικά **αλυσίδα συνδέσμων ανά σκέλος** `saddr=Α&daddr=Β`, που χρησιμοποιεί μόνο τις
-   τεκμηριωμένες παραμέτρους. Ανοίγετε το κάθε σκέλος με τη σειρά.
+- **Πολλά `daddr`** (`?saddr=A&daddr=B&daddr=C`): **δεν δουλεύει**. Κρατιέται μόνο το πρώτο
+  `daddr`, οι υπόλοιπες στάσεις χάνονται. Η έξοδος αυτή έχει αφαιρεθεί.
+- **`directions?source=A&waypoint=B&waypoint=C&destination=D&mode=driving`**: **δουλεύει** και
+  δείχνει σωστά και τις 3 στάσεις. Απαιτεί **iOS 18.4+**. Κάθε ενδιάμεση στάση είναι ξεχωριστό
+  `waypoint`, με τη σειρά της διαδρομής. Τεκμηρίωση (unified map URLs):
+  https://developer.apple.com/documentation/mapkit/unified-map-urls
 
-Ανεπιβεβαίωτο: αν ο σύνδεσμος 1 δουλεύει σε τρέχον iOS, πόσες στάσεις δέχεται, και πώς
-συμπεριφέρεται το Apple Maps με συντεταγμένες ως `daddr` (υπάρχουν forum threads για regression).
+Το εργαλείο δίνει:
+1. **κύριο σύνδεσμο** σε αυτό το format (κείμενα URL-encoded, συντεταγμένες ως `lat,lon`),
+2. **αλυσίδα συνδέσμων ανά σκέλος** `saddr=Α&daddr=Β`, ως εναλλακτική για iOS παλαιότερο από
+   18.4. Ανοίγετε το κάθε σκέλος με τη σειρά.
+
+Ανεπιβεβαίωτο: μέγιστος αριθμός waypoints.
 
 ### Πηγές
 
@@ -74,6 +68,7 @@ consent redirect για short link, το resolve θα αποτύχει.
 - https://www.reddit.com/r/shortcuts/comments/xnpdg9/apple_maps_multistop_directions/
 - https://www.techrepublic.com/article/apple-maps-multiple-stops/
 - https://developer.apple.com/forums/thread/784030
+- https://developer.apple.com/documentation/mapkit/unified-map-urls
 
 ## Περιορισμοί
 
