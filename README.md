@@ -22,6 +22,23 @@ python3 gmaps2apple.py "<url>" --no-resolve --json
 Tests: `python3 -m venv .venv && .venv/bin/pip install pytest && .venv/bin/python -m pytest`
 (offline, χωρίς δίκτυο).
 
+## Σελίδα web
+
+```
+python3 web.py            # ακούει στο 0.0.0.0:8096
+PORT=9000 python3 web.py  # άλλη θύρα
+```
+
+Άνοιξε από το iPhone (ίδιο δίκτυο) το `http://<IP του υπολογιστή>:8096/`, επικόλλησε σύνδεσμο
+Google Maps ή «Αθήνα -> Κόρινθος -> Πάτρα», διάλεξε τρόπο και πάτησε «Μετατροπή». Εμφανίζονται οι
+στάσεις, το κουμπί «Άνοιγμα στο Apple Maps» και, από κάτω, οι σύνδεσμοι ανά σκέλος (iOS < 18.4).
+Μόνο standard library· χωρίς authentication, οπότε μην την εκθέτεις στο διαδίκτυο.
+
+Ασφάλεια: δίκτυο (resolve) γίνεται μόνο για `https://maps.app.goo.gl/...` και `https://goo.gl/maps...`
+(όχι userinfo/port)· όλα τα άλλα URL γίνονται parse χωρίς δίκτυο. Όριο εισόδου 4 KB, escaping
+όλων των τιμών, CSP χωρίς εξωτερικούς πόρους. Γνωστό όριο: το `urlopen` ακολουθεί redirects και ο
+έλεγχος αφορά μόνο το αρχικό URL. Δεν έχει δοκιμαστεί σε πραγματικό iPhone ή με πραγματικό short link.
+
 ## Έρευνα
 
 Πηγές: αναζητήσεις web και ανάγνωση της τεκμηρίωσης Google Maps URLs. Δεν έχω iPhone,
