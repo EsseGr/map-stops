@@ -135,11 +135,10 @@ def api_get(base, value, mode=None):
     q = {"value": value}
     if mode:
         q["mode"] = mode
-    try:
-        with urllib.request.urlopen(base + "/api/apple?" + urlencode(q)) as r:
-            return r.status, r.headers["Content-Type"], r.read().decode()
-    except urllib.error.HTTPError as e:
-        return e.code, e.headers["Content-Type"], e.read().decode()
+    conn = http.client.HTTPConnection(base.split("//")[1])
+    conn.request("GET", "/api/apple?" + urlencode(q))
+    r = conn.getresponse()
+    return r.status, r.getheader("Content-Type"), r.read().decode()
 
 
 def api_post(base, value, mode="driving"):
