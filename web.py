@@ -1,6 +1,9 @@
 """Μικρή σελίδα web για το gmaps2apple (μόνο standard library)."""
 import html
 import os
+import re
+import socket
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -11,6 +14,9 @@ MAX_BODY = 4 * MAX_INPUT  # το percent-encoding των ελληνικών τρ
 MODES = ("driving", "walking", "transit")
 MODE_LABELS = {"driving": "Οδήγηση", "walking": "Περπάτημα", "transit": "Μέσα μεταφοράς"}
 APPLE_PREFIX = "https://maps.apple.com/"
+CONN_TIMEOUT = 15  # δευτερόλεπτα ανά σύνδεση
+URL_RE = re.compile(r"https?://\S+")
+TIMEOUT_MSG = "Ο σύνδεσμος άργησε να απαντήσει (>10 δευτ.). Δοκίμασε τον πλήρη σύνδεσμο."
 
 HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -68,11 +74,25 @@ def process(value, mode):
             return None, ("Οι σύντομοι σύνδεσμοι επιτρέπονται μόνο από https://maps.app.goo.gl/ "
                           "ή https://goo.gl/maps. Άνοιξε τον σύνδεσμο και επικόλλησε τον πλήρη."), mode
         return None, "Δεν κατάλαβα την είσοδο: %s" % exc, mode
+    except (TimeoutError, socket.timeout):
+        return None, TIMEOUT_MSG, mode
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+            return None, TIMEOUT_MSG, mode
+        return None, "Αποτυχία δικτύου στο άνοιγμα του συνδέσμου. Δοκίμασε τον πλήρη σύνδεσμο.", mode
     except OSError:
         return None, "Αποτυχία δικτύου στο άνοιγμα του συνδέσμου. Δοκίμασε τον πλήρη σύνδεσμο.", mode
     except Exception:
         return None, "Αδυναμία μετατροπής της εισόδου.", mode
     return result, None, mode
+
+
+def extract_value(text):
+    """Το πρώτο http(s) URL μέσα στο κείμενο (χωρίς τελικά σημεία στίξης), αλλιώς το κείμενο."""
+    m = URL_RE.search(text or "")
+    if not m:
+        return text
+    return m.group(0).rstrip(".,;:!?)]}»\"'")
 
 
 def _e(text):
@@ -115,6 +135,7 @@ def render_page(result=None, error=None, value="", mode="driving"):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "map-stops"
+    timeout = CONN_TIMEOUT
 
     def _send(self, code, body, ctype="text/html; charset=utf-8"):
         data = body.encode("utf-8")
@@ -129,30 +150,61 @@ class Handler(BaseHTTPRequestHandler):
     def _page(self, code, **kw):
         self._send(code, render_page(**kw))
 
-    def do_GET(self):
-        if urlparse(self.path).path == "/":
-            self._page(200)
-        else:
-            self._send(404, "Δεν βρέθηκε", "text/plain; charset=utf-8")
+    def _text(self, code, body):
+        self._send(code, body, "text/plain; charset=utf-8")
 
-    def do_POST(self):
-        if urlparse(self.path).path != "/":
-            self._send(404, "Δεν βρέθηκε", "text/plain; charset=utf-8")
-            return
+    def _read_form(self, as_page):
+        """Διαβάζει το form body· επιστρέφει dict ή None αν έχει ήδη απαντηθεί σφάλμα."""
+        def fail(code, msg):
+            self.close_connection = True
+            if as_page:
+                self._page(code, error=msg)
+            else:
+                self._text(code, msg)
+            return None
         try:
             length = int(self.headers.get("Content-Length"))
             if length < 0:
                 raise ValueError
         except (TypeError, ValueError):
-            self.close_connection = True
-            self._page(411, error="Λείπει ή είναι άκυρο το Content-Length.")
-            return
+            return fail(411, "Λείπει ή είναι άκυρο το Content-Length.")
         if length > MAX_BODY:
-            self.close_connection = True
-            self._page(413, error="Η είσοδος είναι πολύ μεγάλη (μέγιστο 4 KB).")
-            return
+            return fail(413, "Η είσοδος είναι πολύ μεγάλη (μέγιστο 4 KB).")
         body = self.rfile.read(length)
-        form = parse_qs(body.decode("utf-8", errors="replace"))
+        return parse_qs(body.decode("utf-8", errors="replace"))
+
+    def _api(self, form):
+        value = (form.get("value") or [""])[0]
+        mode = (form.get("mode") or ["driving"])[0]
+        if len(value.encode("utf-8")) > MAX_INPUT:
+            self._text(413, "Η είσοδος είναι πολύ μεγάλη (μέγιστο 4 KB).")
+            return
+        result, error, _ = process(extract_value(value), mode)
+        if error:
+            self._text(400, error)
+        else:
+            self._text(200, result["apple_url"].strip())
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        if u.path == "/":
+            self._page(200)
+        elif u.path == "/api/apple":
+            self._api(parse_qs(u.query))
+        else:
+            self._text(404, "Δεν βρέθηκε")
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path not in ("/", "/api/apple"):
+            self._text(404, "Δεν βρέθηκε")
+            return
+        form = self._read_form(as_page=(path == "/"))
+        if form is None:
+            return
+        if path == "/api/apple":
+            self._api(form)
+            return
         value = (form.get("value") or [""])[0]
         mode = (form.get("mode") or ["driving"])[0]
         result, error, mode = process(value, mode)
@@ -169,6 +221,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(os.environ.get("PORT", "8096"))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    server.daemon_threads = True
     print("map-stops στο http://0.0.0.0:%d" % port)
     try:
         server.serve_forever()

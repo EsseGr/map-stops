@@ -127,3 +127,106 @@ def test_404(server):
     with pytest.raises(urllib.error.HTTPError) as e:
         urllib.request.urlopen(server + "/nope")
     assert e.value.code == 404
+
+
+# --- /api/apple ---
+
+def api_get(base, value, mode=None):
+    q = {"value": value}
+    if mode:
+        q["mode"] = mode
+    conn = http.client.HTTPConnection(base.split("//")[1])
+    conn.request("GET", "/api/apple?" + urlencode(q))
+    r = conn.getresponse()
+    return r.status, r.getheader("Content-Type"), r.read().decode()
+
+
+def api_post(base, value, mode="driving"):
+    conn = http.client.HTTPConnection(base.split("//")[1])
+    conn.request("POST", "/api/apple", urlencode({"value": value, "mode": mode}),
+                 {"Content-Type": "application/x-www-form-urlencoded"})
+    r = conn.getresponse()
+    return r.status, r.getheader("Content-Type"), r.read().decode()
+
+
+def test_api_get_path_url(server):
+    status, ctype, body = api_get(server, PATH_URL)
+    assert status == 200
+    assert ctype == "text/plain; charset=utf-8"
+    assert body.startswith("https://maps.apple.com/directions")
+    assert body == body.strip() and "\n" not in body
+
+
+def test_api_post_same_as_get(server):
+    assert api_post(server, PATH_URL) == api_get(server, PATH_URL)
+
+
+def test_api_url_inside_text(server):
+    text = "Τίτλος\n" + PATH_URL + " ευχαριστώ https://example.com/x"
+    assert api_get(server, text)[2] == api_get(server, PATH_URL)[2]
+
+
+def test_extract_value():
+    assert web.extract_value("Αθήνα -> Πάτρα") == "Αθήνα -> Πάτρα"
+    assert web.extract_value("A (http://a.b/c). B https://d.e") == "http://a.b/c"
+
+
+def test_api_plain_stops(server):
+    status, ctype, body = api_get(server, "Αθήνα -> Πάτρα", "walking")
+    assert status == 200 and body.startswith("https://maps.apple.com/")
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_api_invalid_400(server, value):
+    status, ctype, body = api_get(server, value)
+    assert status == 400
+    assert ctype == "text/plain; charset=utf-8"
+    assert body and "Traceback" not in body
+
+
+def test_api_too_large_413(server):
+    big = "a" * (web.MAX_INPUT + 1)
+    assert api_get(server, big)[0] == 413
+    assert api_post(server, big)[0] == 413
+
+
+def test_api_other_host_short_link_no_network(server, no_network):
+    status, _, body = api_get(server, "Δες https://evil.example/abc εδώ")
+    assert status == 400 and "Traceback" not in body
+
+
+def test_resolve_passes_timeout(monkeypatch):
+    seen = {}
+
+    def fake(req, *a, **kw):
+        seen.update(kw)
+        raise TimeoutError()
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    web.process("https://maps.app.goo.gl/abc", "driving")
+    assert seen.get("timeout") == 10
+
+
+@pytest.mark.parametrize("exc", [TimeoutError(), urllib.error.URLError(TimeoutError())])
+def test_resolve_timeout_message(monkeypatch, exc):
+    def fake(*a, **kw):
+        raise exc
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    result, error, _ = web.process("https://maps.app.goo.gl/abc", "driving")
+    assert result is None and "άργησε" in error
+
+
+def test_connection_timeout_and_parallel(monkeypatch, server):
+    import socket
+    import time
+    assert web.Handler.timeout == 15
+    monkeypatch.setattr(web.Handler, "timeout", 0.5)
+    host, port = server.split("//")[1].split(":")
+    idle = socket.create_connection((host, int(port)))
+    try:
+        assert api_get(server, PATH_URL)[0] == 200  # απαντά ενώ η idle είναι ανοιχτή
+        idle.settimeout(5)
+        t0 = time.time()
+        assert idle.recv(1) == b""  # ο server έκλεισε τη σύνδεση
+        assert time.time() - t0 < 4
+    finally:
+        idle.close()

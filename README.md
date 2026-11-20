@@ -87,6 +87,26 @@ consent redirect για short link, το resolve θα αποτύχει.
 - https://developer.apple.com/forums/thread/784030
 - https://developer.apple.com/documentation/mapkit/unified-map-urls
 
+## API για Συντόμευση (Shortcut)
+
+`GET /api/apple?value=<κείμενο>&mode=<driving|walking|transit>` (το `mode` είναι προαιρετικό,
+προεπιλογή `driving`). Δέχεται και `POST` με τα ίδια πεδία (form-urlencoded).
+
+```
+curl -G http://localhost:8096/api/apple --data-urlencode 'value=Αθήνα -> Πάτρα'
+```
+
+- Αν το `value` περιέχει URL μέσα σε κείμενο (π.χ. τίτλος και μετά σύνδεσμος από το Κοινοποίηση
+  του Google Maps), χρησιμοποιείται το πρώτο http(s) URL. Αλλιώς το κείμενο όπως είναι.
+- Επιτυχία: `200`, `text/plain; charset=utf-8`, σώμα μόνο ο κύριος σύνδεσμος Apple Maps.
+- Σφάλμα: `400` (`413` για είσοδο πάνω από 4 KB), `text/plain`, σύντομο ελληνικό μήνυμα.
+- Ίδιοι κανόνες με τη σελίδα: short links επιλύονται μόνο για τα επιτρεπόμενα hosts της Google.
+- Ρύθμιση Συντόμευσης: «Λήψη εισόδου Shortcut» (κείμενο από το Share Sheet) → «Λήψη περιεχομένων
+  URL» (GET/POST στο `/api/apple`, πεδίο `value`) → «Άνοιγμα URL».
+- Timeouts: resolve short link 10 δευτ. (καθαρό μήνυμα σφάλματος)· 15 δευτ. ανά σύνδεση στον
+  server, που εξυπηρετεί συνδέσεις παράλληλα.
+- Δεν έχει δοκιμαστεί με πραγματική Συντόμευση ή πραγματικό short link.
+
 ## Περιορισμοί
 
 Δεν υπάρχει geocoding (προαιρετικό· δεν υλοποιήθηκε). Τα ονόματα περνούν ως κείμενο αναζήτησης στο Apple Maps.
